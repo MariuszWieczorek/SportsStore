@@ -1,0 +1,9 @@
+﻿<!-- using pozwala na użycie w widokach typów z przestrzeni nazw  SportsStore.Models -->
+@using SportsStore.Models
+@using SportsStore.Models.ViewModels
+
+<!-- addTagHelper włancza wbudowane klasy atrybutów pomocniczych znaczników-->
+@addTagHelper *, Microsoft.AspNetCore.Mvc.TagHelpers
+<!-- polecenie nakazuje wyszukanie klas atrybutów pomocniczych znaczników -->
+<!-- w przestrzeni nazw SportsStore.Infrastructure -->
+@addTagHelper SportsStore.Infrastructure.*, SportsStore

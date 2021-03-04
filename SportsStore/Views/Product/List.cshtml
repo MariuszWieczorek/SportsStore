@@ -1,0 +1,32 @@
+﻿@model ProductsListViewModel
+<!-- widok do tej pory oczekiwałsekwencji obiektów Product-->
+<!-- modyfikujemy dyrektywę model aby poinformować Razor, że pracujemy na innym typie danych -->
+<!-- zmodyfikowana zostałą również pętla for, bo teraz źródłem danych jest właściwość Products w modelu danych -->
+
+@foreach (var p in Model.Products)
+{
+    <!-- kod który był wewnątrz pętli został przeniesiony do widoku częściowego -->
+    <!-- widok częściowy wywołujemy za pomocą Html.Partial()  -->
+    <!-- jej argumentami są nazwa widoku oraz obiekt modelu widoku -->
+    <!-- Html.Partial("ProductSummary", p); -->
+    <!-- zamiast powyższego w framework 2.2 zaleca się użycia Partial Tag Helper jak poniżej -->
+    <!-- https://docs.microsoft.com/en-us/aspnet/core/mvc/views/tag-helpers/built-in/partial-tag-helper?view=aspnetcore-2.2 -->
+
+    <partial name="ProductSummary" for="@p" />
+}
+
+<!-- https://getbootstrap.com/docs/4.0/components/button-group/ -->
+<!-- dodane atrybuty pomocnicze znaczników dodane w PageLinkTagHelper -->
+
+<div page-model="@Model.PagingInfo" page-action="List" page-classes-enabled="true"
+     page-class="btn"
+     page-class-normal="btn-secondary"
+     page-class-selected="btn-primary"
+     page-url-category="@Model.CurrentCategory"
+     class="btn-group btn-group-sm m-1">
+</div>
+
+<!-- poniżej nieudekorowany przełącznik stron -->
+<!-- <div page-model="@Model.PagingInfo" page-action="List"></div> -->
+
+

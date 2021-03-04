@@ -1,0 +1,887 @@
+﻿co po kolei
+nowy->projekt-> szablon: Aplikacja sieci Web platformy .NET Core
+-> szablon: Pusty
+
+utworzenie struktury katalogów
+na projekcje dodaj->nowy katalog ...
+
+Models
+Controllers
+Views
+
+modyfikacja pliku Startup.cs
+- włączenie obsługi frameworka MVC
+
+services.AddMvc();
+
+app.UseDeveloperExceptionPage();
+app.UseStatusCodePages();
+app.UseStaticFiles();
+app.UseMvc(routes => {
+});
+
+dodanie obsługi widoków Razor
+prawy przycisk na katalogu Views
+dodaj->nowy element-> Razer View Imports
+
+zostaje utworzony plik: Views\_ViewImports.cshtml
+
+@using SportsStore.Models
+@addTagHelper *, Microsoft.AspNetCore.Mvc.TagHelpers
+
+-----------------------------------------------------------------------------------------------------------
+Utworzenie projektu do testów jednostkowych
+
+klikamy na rozwiązanie Solution SportStore
+nowy ➤ projekt-> szablon: Projekt testów xUnit (.NET Core)
+Add ➤  New Project ➤ xUnit Test Project (.NET Core) project template
+nadajemy nazwę: SportsStore.Tests
+
+edytujemy plik SportsStore.Tests.csproj
+dodajemy referencje do projektu SportStore
+
+<ItemGroup>
+    <ProjectReference Include="..\SportsStore\SportsStore.csproj" />
+ </ItemGroup>
+ można też po przez klik prawym przyciskiem i wybranie opcji add -> reference
+
+ nstępnie dodajemy linię
+ <PackageReference Include="Moq" Version="4.10.1" />
+
+ po zapisie Visual Studio pobierze i zainstaluje Moq
+
+ W tym momencie projekty aplikacji i testów jednostkowych są już gotowe do rozpoczęcia  pracy nad nimi
+ The application and unit test projects are created and configured and ready for development.
+
+ -----------------------------------------------------------------------------------------------------------
+ Tworzenie modelu domeny
+
+ Wszystkie projekty MVC zaczynają się od projektu domeny
+ ponieważ tworzymy aplikacjętypu e-commerce  najbardziej otrzywistym modelem domeny jest produkt
+ Do katalogu Models dodajemy plik klasy o nazwie Product.cs
+
+ namespace SportsStore.Models 
+ {
+	public class Product
+	{
+	public int ProductID { get; set; }
+	public string Name { get; set; }
+	public string Description { get; set; }
+	public decimal Price { get; set; }
+	public string Category { get; set; }
+	}
+}
+
+-----------------------------------------------------------------------------------------------------------
+Tworzenie repozytorium
+
+W katalogu Models tworzymy plik: IProductRepository.cs 
+nie musimy się przejmować w jaki sposób silnik dostępu do danych będzie realizował swoje zadanie
+wystarczy, że zdefiniujemy do niego interfejs
+
+using System.Linq;
+
+namespace SportsStore.Models
+{
+	public interface IProductRepository 
+	{
+		IQueryable<Product> Products { get; }
+	}
+}
+
+w interfejsie tym wykorzystywany jest interfejs IQueryable<T>, który pozwala na pozyskanie sekwencji
+obiektów Product bez konieczności określenia sposobu przechowywania i pobierania danych
+Przedstawia kolekcję, na której możemy wykonać zapytania
+Klasa używająca interfejsu IProductRepository może uzyskać obiekty Product bez potrzeby znajomości jakichkolwiek
+szczegółów ich pochodzenia
+gdybyśmy użyli interfejsu IEnumerable konieczne było by pobranie wszystkich obiektów Product z bazy a następnie pozbycie się niepotrzebnych
+należy jednak zachować ostrożność bo każde użycie kolekcji obiektów powoduje wykonanie zapytania do bazy danych
+uniknąć możemy tego efektu za pomocą metod rozszerzenia ToArray() lub ToList()
+
+-----------------------------------------------------------------------------------------------------------
+Tworzenie imitacji repozytorium
+
+Mamy już interfejs, możemy więc zaimplementować mechanizm trwałego przechowywania danych
+Aby jednak móc pracować dalej nad kolejnymi elementami aplikacji bez niego tworzymy tymczasowo imitację interfejsu IProductRepository
+W katalogu Models tworzymy plik: FakeProductRepository.cs 
+Klasa FakeProductRepository implementuje interfejs IProductRepository i jako wartość właściwości Products zwraca
+stałej wielkości kolekcję obiektów Product
+
+namespace SportsStore.Models
+{
+    public class FakeProductRepository : IProductRepository
+    {
+        public IQueryable<Product> Products => new List<Product>
+        {
+            new Product { Name = "Piłka Nożna", Price = 25},
+            new Product { Name = "Deska serfingowa", Price = 255},
+            new Product { Name = "Buty do biegania", Price = 50}
+        }.AsQueryable<Product>();
+    }
+}
+
+Metoda .AsQueryable<Product>() jest używana w celu przeprowadzenia konwersji obiektów na postać IQueryable<Product>
+
+
+-----------------------------------------------------------------------------------------------------------
+Rejestrowanie usługi repozytorium
+
+W aplikacji MVC duży nacisk położony jest na lużne powiązania loose couple, high cohesion
+Oznacza to możliwość wprowadzenia zmian w jednej części aplikacji bez konieczności modyfikacji innych jej fragmentów
+Klasa dostarczająca usługę może być zmieniona lub zastąpiona bez konieczności wprowadzania zmian w klasach korzystających z tej usługi.
+
+Rejestrowanie usług odbywa się za pomocą metody ConfigureServices() klasy startup
+
+  // wstrzykiwanie zależności - ustawienie jaka klasa ma obsługiwać interfejs IProductRepository
+  // może to być EFProductRepository lub FakeProductRepository
+  services.AddTransient<IProductRepository, FakeProductRepository>();
+
+  Kiedy komponent taki jak controller wymaga implementacji interfejsu IProductRepository wówczas powinien otrzymać egzemplarz klasy FakeProductRepository
+  zadaniem metody AddTransient() że nowy obiekt typu FakeProductRepository powinien zostaćutworzony za każdym razem
+  gdy jest potrzebny interfejs IProductRepository
+
+  -----------------------------------------------------------------------------------------------------------
+  Wyświetlanie listy produktów - trochę interfejsu użytkownika dla odmiany
+  - utworzymy kontroler i metodę akcji pozwalającą wyświetlić dane produktu z repozytorium
+  - kontrolery i widoki tworzymy po przez kliknięcie prawym przyciskiem myszy na odpowiedni katalog
+   i wybór z menu kontekstowego dodaj nowy element a następnie wskazanie odpowiedniego szablonu
+   ( alternatywą jest utworzenie szkieletu scaffolding, jednak kod generowany w ten sposób jest zbyt ogólny aby mógł zostać uznany za użyteczny )
+
+   tworzymy plik ProductController.cs w katalogu Controllers
+
+   using Microsoft.AspNetCore.Mvc;
+   using SportsStore.Models;
+   
+   kiedy framework MVC musi utworzyćnowy egzemplarz klasy ProductController w celu obsługi żądania HTTP
+   przeprowadza analizę konstruktora i ustala, że wymagany jest obiekt implementujący interfejs IProductRepository
+   w celu określenie która implementacja klasy powinna zostać użyta MVC sprawdzi konfigurację w klasie startup
+   
+   To nosi nazwę wstrzyknięcia zależności
+   This is known as dependency injection, and its approach (podejście) allows the ProductController constructor
+   to access the application’s repository
+   through the IProductRepository interface
+   without having any need to know which implementation class has been configured.
+
+   namespace SportsStore.Controllers
+   {
+	   public class ProductController : Controller
+	   {
+		   private IProductRepository repository;
+		   public ProductController(IProductRepository repo)
+		   {
+		   repository = repo;
+		   }
+	   }
+   }
+
+  -----------------------------------------------------------------------------------------------------------
+  dodanie do kontrolera metody akcji o nazwie List() odpowiedzialnej za wygenerowanie  widoku
+  do powyższego kodu za konstruktorem dodajemy linię
+  
+  public ViewResult List() => View(repository.Products);
+
+  wywołanie metody View() bez podania nazwy widoku znaczy że aplikacja powinna wygenerować domyślny szablon widoku
+  przekazanie listy obiektów oznacza, że wypełniliśmy obiekt Model w widoku
+
+  -----------------------------------------------------------------------------------------------------------
+  trzeba utworzyć widok, ale najpierw czynności przygotowawcze, dzięki którym tworzenie widoków stanie się prostsze
+
+  krok 1
+  utworzenie współdzielonego układu definiujacego treść umieszczoną we wszystkich odpowiedziach HTML wysyłanych do klienta
+  - widoki pozostają spójne
+  - będą zawierały odwołania do ważnych skryptów JavaScript i arkuszy stylów
+
+  Tworzymy katalog Views/Shared i tworzymy w nim plik _Layout.cshtml
+
+ <!DOCTYPE html>
+ <html>
+	 <head>
+		<meta name="viewport" content="width=device-width" />
+		<title>SportsStore</title>
+	 </head>
+	 <body>
+		<div>@RenderBody()</div>
+	  </body>
+  </html>
+
+  krok 2
+  skonfigurowanie aplikacji aby plik układu _Layout.cshtml był stosowany domyślnie
+  za pomocą pliku  Views \ _ViewStart.cshtml
+
+   @{
+    Layout = "_Layout";
+	}
+  
+  krok 3
+  dodajemy widok który będzie wyświetlony po wywołaniu metody akcji List()
+  Tworzymy katalog Views/Product i dodajemy do niego plik widoku Razor o nazwie List.cshtml
+
+  wyrażenie @model wskazuje, że widok otrzyma z metody akcji sekwencję obiektów Product
+  pętla foreach iteruje przez tę sekwencję 
+  i generuje prosty zbiór elementów HTML dla każdego obiektu Product
+
+  Widok nie musi wiedzieć skąd pochodzą obiekty Product, w jaki sposób są pobierane
+  @model IEnumerable<Product>
+  
+  @foreach (var p in Model)
+  {
+  <div>
+  <h3>@p.Name</h3>
+  @p.Description
+  <h4>@p.Price.ToString("c")</h4>
+  </div>
+  }
+
+ -----------------------------------------------------------------------------------------------------------
+  konfigurowanie trasy domyślnej
+
+  musimy teraz poinformować framework, że żądania dotyczące katalogu głównego witryny
+  powinny być przekazywane do metody akcji List() z klasy ProductController
+  Możemy to zrobić , przez edycję pliku Startup.cs
+
+  public void Configure(IApplicationBuilder app, IHostingEnvironment env)
+  {
+  (...)
+  app.UseMvc(routes => {routes.MapRoute(name: "default",template: "{controller=Product}/{action=List}/{id?}");});
+  (...)
+  }
+
+  Metoda Configure() klasy Startup jest używana do skonfigurowania potoku żądania
+  na który składają się klasy odpowiedzialne za przeanalizowanie żądania HTTP i wygenerowanie odpowiedzi
+  metoda UseMvc() konfiguruje oprogramowanie pośredniczące MVC a jedna z opcji konfiguracyjnych dotyczy
+  schematu używanego podczas mapowania adresów URL na kontrolery i metody akcji
+
+  wartością właściwości controller jest Product a nie ProductController pomijamy tą część nazwy
+  wynika to z konwencji nazewniczych
+
+  -----------------------------------------------------------------------------------------------------------
+  uruchomienie aplikacji
+
+  Podstawowe mechanizmy są gotowe
+  - mamy kontroler z metodą akcji która jest wywoływana przez framework MVC w momencie żądania domyślnego adresu URL
+  - framework MVC tworzy egzemplarz klasy FakeRepository i używa go do utworzenia nowego obiektu kontrolera przeznaczonego do obsługi żądania
+  - Imitacja repozytorium dostarcza kontrolerowi pewne przykładowe dane testowe, któe metoda akcji przekazuje widokowi Razor
+  - w trakcje generowania odpowiedzi framework MVC łączy dane widoku wybranego przez metodę akcji z danymi we współdzielonym układzie
+
+
+-----------------------------------------------------------------------------------------------------------
+Przygotowanie bazy danych
+użyjemy SQL Server będziemy z niej korzystać za pośrednictwem Entity Framework Core ( EF Core) 
+
+Utworzenie klas bazy danych
+Klasa kontekstu bazy danych jest pomostem pomiędzy aplikacją a frameworkiem EF Core
+a jej działanie polega na zapewnieniu dostępu do danych aplikacji z użyciem obiektów modelu
+W celu utworzenia klasy kontekstu bazy danych tworzymy
+plik: Models\ApplicationDbContext.cs
+
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Design;
+using Microsoft.Extensions.DependencyInjection;
+
+
+// klasa bazowa DBContext zapewnia dostęp do funkcjonalności Entity Framework Core
+// właściwość Product zapewnia dostęp do obiektów typu product
+namespace SportsStore.Models
+{
+    public class ApplicationDbContext : DbContext
+    {
+        public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options)
+		: base(options) { }
+
+        public DbSet<Product> Products { get; set; }
+    }
+}
+
+-----------------------------------------------------------------------------------------------------------
+Utworzenie klasy reposytorium
+Kolejnym krokiem jest utworzenie klasy implementującej interfejs IProductRepository i pobierającej dane za pomocą
+Entity Framework Core
+
+tworzymy plik:  Models\EFProductRepository.cs
+Funkcjonalność będzie dodawana wraz z dodawaniem kolejnych funkcji w aplikacji
+na obecnym etapie implementacja repozytorium po prostu 
+mapuje właściwość Products zdefiniowaną przez interfejs IProductRepository
+na właściwość Products zdefiniowaną przez klasę ApplicationDbContext
+
+Właściwość Product w klasie kontekstu zwraca obiekt typu DbSet<Product> implementujący obiekt IQueryable<T>
+i ułatwiający zaimplementowanie IProductRepository podczas użycia Entity Framework Core
+
+using System.Collections.Generic;
+using System.Linq;
+
+namespace SportsStore.Models
+{
+    public class EFProductRepository : IProductRepository
+    {
+        private ApplicationDbContext context;
+
+        public EFProductRepository(ApplicationDbContext ctx)
+        {
+            context = ctx;
+        }
+
+        public IQueryable<Product> Products => context.Products;
+    }
+}
+
+-----------------------------------------------------------------------------------------------------------
+Definiowanie ciągu tekstowego połączenia
+określa on położenie i nazwę bazy danych oraz użytkownika i hasło
+dane te są przechowywane w pliku JSON o nazwie appsetings.json
+
+Generujemy go za pomocą szablonu
+add ASP.Net Core -> Web -> ASP.NET -> App Settings File
+
+ASP.NET Configuration File 
+
+{
+  "Data1": {
+    "SportStoreProducts": {
+      "ConnectionString": "Server=192.168.1.2;Database=mwbase;Uid=user1;Pwd=alamakota;"
+    }
+  },
+
+  "Data2": {
+    "SportStoreProducts": {
+      "ConnectionString": "Server=(localdb)\\MSSQLLocalDB;Database=SportsStore1;Trusted_Connection=True;MultipleActiveResultSets=true"
+    }
+  }
+}
+
+-----------------------------------------------------------------------------------------------------------
+Konfigurowanie aplikacji Startup.cs
+kolejne kroki to odczyt ciągu tekstowego połączenia oraz skonfigurowanie aplikacji do jego użycia podczas nawiązywania połączenia z bazą danych
+
+dodane linie
+
+
+odczyt connectinon string
+sekwencja metod odpowiedzilna za  konfigurację Entity Framework
+AddDbContext() - przygotowuje usługi przygotowwane przez Entity Framework Core do użycia wraz z klasą kontekstu bazy danych
+argumentem jest wyrażenia lambda które skonfiguruje bazę danych pod kątem kontekstu za pomocą metody UseSqlServer()
+
+services.AddDbContext<ApplicationDbContext>(options =>
+            options.UseSqlServer(
+                Configuration["Data2:SportStoreProducts:ConnectionString"]));
+
+
+wstrzykiwanie zależności - ustawienie jaka klasa ma obsługiwać interfejs IProductRepository
+zastępujemy klasę FakeProductRepositorymoże klasą EFProductRepository
+ 
+services.AddTransient<IProductRepository, EFProductRepository>();
+
+-----------------------------------------------------------------------------------------------------------
+Utworzenie i zastosowanie migracji danych
+
+Entity framework Core ma możliwośćwy generowania schematu bazy danych na podstawie klas modelu
+Ustawiamy się w katalogu projektu czyli tam gdzie znajduje się plik Startup.cs
+i z okna poleceń wydajemy polecenie:
+
+dotnet ef migrations add Initial
+
+po wykoaniu polecenia powstanie katalog o nazwie Migrations
+w tym katalogu EF przechowuje klasy migracji
+Jeden z plików o nazwie zakończonej na _initial.cs
+to klasa wykorzystana do utworzenia początkowego schematu bazy danych
+
+-----------------------------------------------------------------------------------------------------------
+SeedData() - uzupełnienie bazy przykładowymi danymi
+
+-----------------------------------------------------------------------------------------------------------
+Dodanie stronicowania
+dodajemy parametr metody List( int productPage = 1 )
+
+public int PageSize = 4;
+(...)
+
+public ViewResult List(int productPage = 1)
+	=> View(repository.Products
+	.OrderBy(p => p.ProductID)
+	.Skip((productPage - 1) * PageSize)
+	.Take(PageSize));
+
+właściwość PageSize pozwala zdefiniować ile chcemy produktów widzieć na stronie
+do metody List() dodany został parametr opcjonalny productPage ustawiony na 1
+co oznacza gdy wywołamy metodębez parametru wyświetlona zostanie pierwsza strona produktu
+
+-----------------------------------------------------------------------------------------------------------
+Test jednostkowy stronicowanie 
+plik:	ProductControllerTests.cs		metoda:	Can_Paginate()
+
+-----------------------------------------------------------------------------------------------------------
+Uruchomienie konkretnej strony za pomocą adresu URL
+http://localhost:5000/?productPage=2
+
+-----------------------------------------------------------------------------------------------------------
+Wyświetlenie łączy stron, aby nie trzeba było wpisywać parametru productPage w pasku adresu
+
+Dodawanie modelu widoku
+Aby zapewnić możliwość prawidłowego działania atrybutów pomocniczych znaczników musimy przekazać informacje:
+o liczbie dostępnych stron, bieżącej stronie oraz całkowitej liczbie produktów w repozytorium
+Najprostszym sposobem zrealizaowania tego zadania jest utworzenie modelu widoku, który będzie
+używany do przekazywania danych między kontrolerem i widokiem
+tworzymy katalog Models/ViewModels i tworzymy w nim plik klasy PagingInfo.cs
+
+Plik: Models/ViewModels/PagingInfo.cs
+
+using System;
+// Model Widoku do przekazywania danych między kontrolerem a widokiem
+// aby zapewnić prawidłowe działanie atrybutów pomocniczych znaczników 
+// Przechowujemy w nim informację:
+// o ogólnej liczbie pozycji
+// o wyświetlanej ilości pozycji na stronie
+// o bieżącej stronie
+// oraz o ilości stron Wyliczamy dzieląc ogólną liczbę pozycji przez ilość pozycji na stronie
+
+namespace SportsStore.Models.ViewModels
+{
+    public class PagingInfo
+    {
+        public int TotalItems { get; set; }
+        public int ItemsPerPage { get; set; }
+        public int CurrentPage { get; set; }
+
+        public int TotalPages =>
+            (int)Math.Ceiling((decimal)TotalItems / ItemsPerPage);
+    }
+}
+
+-----------------------------------------------------------------------------------------------------------
+Dodanie klasy atrybutu pomocniczego
+Tworzymy katalog Infrastructure - w nim przechowujemy klasy komponentów aplikacji nie powiązanych z domeną
+w tym katalogu tworzymy plik: PageLinkTagHelper.cs
+
+atrybuty pomocnicze znaczników w odróżnieniu od  widoków i kontrolerów muszą być rejestrowanie
+robimy to w pliku: Views\_ViewImports.cshtml
+
+@using SportsStore.Models.ViewModels
+...
+@addTagHelper SportsStore.Infrastructure.*, SportsStore
+
+-----------------------------------------------------------------------------------------------------------
+Test jednostkowy - tworzenie łączy stron
+plik:	PageLinkTagHelperTests.cs	metoda:	Can_Generate_Page_Links()
+książka strona 229
+
+-----------------------------------------------------------------------------------------------------------
+Dodawania danych do modelu widoku
+Musimy przekazać obiekt klasy PagingInfo do widoku
+Możemy to zrealizaowac za pomocą obiektu ViewBag ale lepszym rozwiązaniem jest opakowanie wszystkich danych wysyłanych z kontrolera
+do widoku pojedynczą klasą modelu widoku
+Tworzymy więc klasę do której wrzucamy listę produktów oraz obiekt klasy PagingInfo
+
+Tworzymy Plik:
+Models\ViewModels\ProductsListViewModel.cs
+
+using System.Collections.Generic;
+using SportsStore.Models;
+
+namespace SportsStore.Models.ViewModels
+{
+    public class ProductsListViewModel
+    {
+        public IEnumerable<Product> Products { get; set; }
+        public PagingInfo PagingInfo { get; set; }
+    }
+}
+
+-----------------------------------------------------------------------------------------------------------
+Modyfikujemy metodę List() w kontrolerze
+
+public ViewResult List(int productPage = 1)
+	=> View(repository.Products
+	.OrderBy(p => p.ProductID)
+	.Skip((productPage - 1) * PageSize)
+	.Take(PageSize));
+
+użyta metoda wcielejąca wyrażenie zamiast tradycyjnego zapisu
+public ViewResult List(int productPage = 1)
+	{
+	return View(repository.Products.OrderBy(p => p.ProductID).Skip((productPage - 1) * PageSize).Take(PageSize));
+	}
+
+
+Modyfikujemy metodę List() aby korzystała z klasy ProductsListViewModel 
+
+
+	
+public ViewResult List(int productPage = 1)
+	=> View(new ProductsListViewModel {
+	Products = repository.Products
+	.OrderBy(p => p.ProductID)
+	.Skip((productPage - 1) * PageSize)
+	.Take(PageSize),
+	
+	PagingInfo = new PagingInfo {
+	CurrentPage = productPage,
+	ItemsPerPage = PageSize,
+	TotalItems = repository.Products.Count()
+	}
+
+	})
+
+-----------------------------------------------------------------------------------------------------------
+Wyświetlanie łączy stron
+Mamy model widoku, który zawiera dane stronicowania
+został zaktualizowany kontroler aby te dane zostały przekazane do widoku
+czyli metoda List wywołuje metodę View przekazując do niej repozytorium oraz model widoku
+
+Pozostało dodanie elementu HTML, który będzie przetwarzany przez atrybut pomocniczy znacznika
+w celu utworzenia łączy stron
+
+do pliku Views\Product\List.cshtml
+dodajemy:
+
+<div page-model="@Model.PagingInfo" page-action="List"></div>
+jest to bardzo prosty zestaw linków bez żadnych ozdobników
+
+-----------------------------------------------------------------------------------------------------------
+Ulepszanie adresów URL
+należy spowodować aby adres
+http://localhost/?productPage=2
+można było również zapisać
+http://localhost/Page2
+
+można to zrobić wykorzystując funkcje rutingu ASP.NET
+ruting jest odpowiezialny za przetwarzanie adresów URL i ustalenie docelowego fragmentu aplikacji
+wystarczy dodać nową trasę podczas rejestrowania oprogramowania pośredniczącego w metodzie Configure() klasy Startup
+
+app.UseMvc(routes => {
+
+* nowa trasa
+	routes.MapRoute(
+		name: "pagination",
+		template: "Products/Page{productPage}",
+		defaults: new { Controller = "Product", action = "List" });
+
+* domyślna trasa		
+	routes.MapRoute(
+		name: "default",
+		template: "{controller=Product}/{action=List}/{id?}");
+		
+	});
+ 
+nowa trasa musi być podana przed domyślną bo trasy sąprzetwarzane w kolejności definiowania
+jest to jedyne miejsce w którym musimy zrobić zmianę
+Framework MVC jest ściśle zintegrowany z funkcjami rutingu więc taka zmiana jest automatycznie
+stosowana podczas przetwarznia adresów URL używanych przez aplikację także tych generowanych przez atrybuty pomocnicze znaczników
+
+-----------------------------------------------------------------------------------------------------------
+Dodawanie stylu str 237
+
+https://github.com/apress/pro-asp.net-core-mvc-2
+
+
+
+
+
+ w celu nadania stylów CSS wykorzystamy framework bootstrap
+ do zainstalowania pakietu BootStrap preferowana była usługa Bower w obecnej wersji nie jest domyślnie wspierana
+ poniżej akapitu o libman.json opisane co należy zrobić aby mimo wszystko korzystać z pliku bower.json
+ 
+ Program Visual Studio ma obecnie wbudowaną obsługę LibMan w projektach ASP.NET Core
+ poniżej dokumentacja
+ https://docs.microsoft.com/pl-pl/aspnet/core/client-side/libman/libman-vs?view=aspnetcore-2.2
+ https://github.com/aspnet/AspNetCore.Docs/tree/master/aspnetcore/client-side/libman/samples/  
+
+ Plik: libman.json
+
+ {
+  "version": "1.0",
+  "defaultProvider": "cdnjs",
+  "libraries": [
+    {
+      "destination": "wwwroot/lib/jquery/",
+      "library": "jquery@3.4.0"
+    },
+    {
+      "provider": "unpkg",
+      "library": "bootstrap@4.3.1",
+      "destination": "wwwroot/lib/bootstrap/"
+    }
+   
+  ]
+}
+
+https://github.com/Apress/pro-asp.net-core-mvc-2/blob/master/errata.md
+Jeżeli nie chcemy stosować domyślnego pliku libman i stosować nadal bower.json należy:
+
+	To create the Bower file required by the example projects:
+    Right-click on the project item in the Solution Explorer window,
+	select Add > New Item, select JSON File from the ASP.NET Core/General category
+	and set the file name to .bowerrc (note the letter r appears twice), and click the Add button.
+
+    Set the contents of the .bowerrc file as follows:
+
+    {
+        "directory": "wwwroot/lib",
+        "registry": "https://registry.bower.io"        
+    }
+
+    Save the changes. (This is important - you must save the changes to the .bowerrc file before proceeding)
+
+    Right-click on the project item and create another JSON file, 
+	this time called bower.json. Set the contents of the file as follows:
+
+    {
+        "name": "asp.net",
+        "private": true,
+        "dependencies": {
+            "bootstrap": "4.0.0-alpha.6"            
+        }
+    }
+
+    Save the changes to the bower.json file. Close and re-open the project and Visual Studio will download the Bootstrap package.
+	   	  
+-----------------------------------------------------------------------------------------------------------
+zastosowanie w aplikacji stylów Bootstrap
+w pliku Views\Shared\_Layout.cshtml 
+
+<head>
+    <meta name="viewport" content="width=device-width">
+    <link rel="stylesheet"
+          asp-href-include="lib/bootstrap/dist/css/*.min.css"
+          asp-href-exclude="**/*-reboot*,**/*-grid*" />
+    <title>SportsStore</title>
+</head>
+
+w znaczniku <link> ma atrybuty asp-href-include i  asp-href-exclude
+przedstawiające przykład wbudowanych klas atrybutu pomocniczego znacznika
+
+dodanie atrkusza stylów Bootstrap CSS do pliku _Layout.cshtml
+oznacza możliwość użycia tych stylów w dowolnym widoku zbudowanym na bazie tego układu (_ViewStart.cshtml)
+
+-----------------------------------------------------------------------------------------------------------
+PageLinkTagHelper.cs - dodanie klas do elementów generowanych w tym pliku
+zmieniamy styl przycisków wygenerowanych przez klasę PageLinkTagHelper
+nie wiążemy klas Bootstrap z kodem generowanym przez C# poonieważ znacznie utrudnia to
+wielokrotne użycie atrybutu pomocniczego znacznika w innych częściach aplikacji 
+lub zmianę wyglądu przycisków
+Dlatego też definiujemy własne atrybuty dla znacznika <div> wskazujące wymagane klasy do użycia
+
+odpowiadające im własciwości dodałem do klasy atrybutu pomocniczego
+		public bool PageClassesEnabled { get; set; } = false;
+        public string PageClass { get; set; }
+        public string PageClassNormal { get; set; }
+        public string PageClassSelected { get; set; }
+następnie podane atrybuty są użyte do nadania stylu znacznikom <a>
+ 
+		if (PageClassesEnabled)
+        {
+            tag.AddCssClass(PageClass);
+            tag.AddCssClass(i == PageModel.CurrentPage
+                ? PageClassSelected : PageClassNormal);
+        }
+
+-----------------------------------------------------------------------------------------------------------
+Tworzenie widoku częściowego
+widok częściowy - jest to fragment treści, który można dołączyć do innego widoku
+pomaga on zmniejszyć ilość powielonego kodu - jeżeli używamy tych samych danych w kilku miejscach w aplikacji
+tworząc go uprościmy widok List.cshtml, 
+Do katalogu Views/Shared dodajemy plik widoku Razor o nazwie ProductSummary.cshtml
+
+<!-- widok częściowy zawierający komponent przedstawiający produkt  -->
+
+@model Product
+
+<div class="card m-1 p-1">
+    <div class="bg-light p-1">
+        <h4>
+            @Model.Name
+            <span class="badge badge-pill badge-primary" style="float:right">
+                <small>@Model.Price.ToString("c")</small>
+            </span>
+        </h4>
+    </div>
+    <div class="card-text p-1">
+        @Model.Description
+    </div>
+</div>
+
+teraz można zmodyfikować Views\Product\List.cshtml aby korzystał z powyższego widoku częściowego
+
+@foreach (var p in Model.Products)
+{
+    <!-- kod który był wewnątrz pętli został przeniesiony do widoku częściowego -->
+    <!-- widok częściowy wywołujemy za pomocą Html.Partial()  -->
+    <!-- jej argumentami są nazwa widoku oraz obiekt modelu widoku -->
+    <!-- Html.Partial("ProductSummary", p); -->
+    <!-- zamiast powyższego w framework 2.2 zaleca się użycia Partial Tag Helper jak poniżej -->
+    <!-- https://docs.microsoft.com/en-us/aspnet/core/mvc/views/tag-helpers/built-in/partial-tag-helper?view=aspnetcore-2.2 -->
+
+    <partial name="ProductSummary" for="@p" />
+}
+
+-----------------------------------------------------------------------------------------------------------
+str 242
+mamy większość podstawowej infrastruktury
+początki modelu domeny
+repozytorium produktów obsługujące bazę SQL Server za pośrednictwem Entity Framework Core
+jeden kontroler ProductController który pozwala wygenerować stronicowaną listę produktów
+przyjazny schemat adresów URL
+
+-----------------------------------------------------------------------------------------------------------
+rozszerzenie metody akcji List() w kontrolerze ProductController o filtrowanie obiektów Product w repozytorium
+rozszerzenie schematów adresów URL i modyfikacja strategii routingu
+utworzenie listy kategorii w panelu bocznym, wyróżnienie bieżącej kategorii
+
+filtrowanie listy produktów
+modyfikacja pliku: Models\ViewModels\ProductsListViewModel.cs
+
+dodajemy właściwość:
+public string CurrentCategory { get; set; }
+
+następnie modyfikacja metody akcji List() w kontrolerze
+aby filtrowała obiekty product wg kategorii
+oraz aby korzystała z nowej właściwości dodanej do medelu widoku
+
+dodajemy parametr category
+filtrujemy w LINQ w klauzuli Where produkty wg tej kategorii
+oraz ustawiamy właściwość CurrentCategory = category we ProductsListViewModel
+
+efekt zmiany zobaczysz po wpisaniu adresu URL http://localhost:60000/?category=Szachy
+-----------------------------------------------------------------------------------------------------------
+
+Dodanie testu jednostkowego Can_Filter_Products()
+
+-----------------------------------------------------------------------------------------------------------
+rozszerzenie schematów adresów URL i modyfikacja strategii routingu
+aby nie trzeba było stosować brzydkich adresów w postaci http://localhost:60000/?category=Szachy
+rozbudowujemy metodę Configure() klasy Startup
+
+app.UseMvc(routes => {
+
+    routes.MapRoute(
+        name: null,
+        template: "{category}/Strona{productPage:int}",
+        defaults: new { controller = "Product", action = "List"
+        });
+
+    routes.MapRoute(
+        name: null,
+        template: "Strona{productPage:int}",
+        defaults: new { controller = "Product", action = "List", productPage = 1}
+        );
+
+    routes.MapRoute(
+        name: null,
+        template: "{category}",
+        defaults: new { controller = "Product", action = "List", productPage = 1}
+        );
+
+    // wzorzec składanych adresów URL
+    // URL http://localhost/Strona2
+    routes.MapRoute(
+        name: null,
+        template: "",
+        defaults: new { controller = "Product", action = "List", productPage = 1}
+        );
+                
+    // URL http://localhost/?productPage=2
+    routes.MapRoute(
+        name: "default",
+        template: "{controller}/{action}/{id?}"
+        );
+
+        
+});
+
+-----------------------------------------------------------------------------------------------------------
+str 249
+Modyfikacja pliku PageLinkTagHelper.cs i List()
+ulepszenie pozwala na nieutracenie informacji o filtrze po kliknięciu na link z numerem strony
+-----------------------------------------------------------------------------------------------------------
+Menu nawigacji po kategoriach
+- możliwość wyboru kategorii z listy
+- podświetlenie aktualnie wybranej kategorii
+wraz z rozwojem aplikacji będziemy korzystać z tego elementu w wielu kontrolerach
+więc potrzebujemy czegoś, co będzie niezależne i będzie sie nadawało do wielokrotnego użytku
+
+Framework ASP.NET Core MVC posiada mechanizm komponentów widoku
+są doskonałe do elementów typu kontrolka nawigacji
+komponent widoku to klasa C# zawierająca małą ilość logiki aplikacji
+
+Tworzenie kontrolera nawigazji
+Tworzymy katalog Components - zgodnie z konwencją jest to miejsce przeznaczone dla komponentów widoku
+
+NavigationMenuViewComponent.cs File in the Components Folder
+
+using Microsoft.AspNetCore.Mvc;
+namespace SportsStore.Components
+{
+	public class NavigationMenuViewComponent : ViewComponent 
+	{
+		public string Invoke() 
+		{
+		return 
+		"Hello from the Nav View Component";
+		}
+	}
+}
+
+Metoda Invoke() jest wywoływana w momencie użycia tego komponentu
+
+używamy ją we współdzielonym układzie, gdyż chcemy aby pojawiała się on na wszystkich stronach
+użycie komponentu widoku w pliku Views\Shared\_Layout.cshtml
+
+konwencja Component.InvokeAsync("NavigationMenu") szuka pliku Components\NavigationMenuViewComponent
+
+<div id="categories" class="col-3">
+	@await Component.InvokeAsync("NavigationMenu")
+</div>
+
+-----------------------------------------------------------------------------------------------------------
+Tworzenie widoku wskazywanego przez komponenty widoku
+
+Silnik Razor używa różnych konwencji podczas pracy z widokami które są wskazywane przez komponenty widoku
+zarówno nazwa domyslna jak i miejsce przechowywania widoku są inne
+niż w przypadku widoków używanych przez kontrolery
+
+Tworzymy katalog a w nim plik: \Views\Shared\Components\NavigationMenu\Default.cshtml
+
+@model IEnumerable<string>
+
+<a class="btn btn-block @(ViewBag.SelectedCategory==null ? "btn-primary" : "btn-secondary")"
+   asp-action="List"
+   asp-controller="Product"
+   asp-route-category="">
+    strona główna
+</a>
+
+@foreach (string category in Model)
+{
+    <a class="btn btn-block @(category == ViewBag.SelectedCategory ? "btn-primary" : "btn-secondary")"
+       asp-action="List"
+       asp-controller="Product"
+       asp-route-category="@category"
+       asp-route-productPage="1">
+        @category
+    </a>
+}
+
+-----------------------------------------------------------------------------------------------------------
+test jednostkowy
+-----------------------------------------------------------------------------------------------------------
+Budowa koszyka na zakupy
+przycisk dodaj będzie wyświetlany obok każdego produktu w katalogu
+kliknięcie tego przycisku spowoduje wyświetlenie podsumowania wszystkich wybranych do tej pory produktów
+użytkownik bęzie mógł następnie kliknąć kontynuuj zakupy aby wrócić do katalogu lub złóż zamówienie
+
+Dodawanie modelu koszyka
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    
+
